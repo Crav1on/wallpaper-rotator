@@ -1,0 +1,140 @@
+---
+name: crav1-open-pr
+description: >-
+  Use when commits exist on feat/<slug> or spec/<slug> and the user wants a
+  pull request, or to push to an existing one. Pushes only after a yes, opens
+  it with gh or az, or on an existing pull request offers to update its
+  description or add a comment, posted only on a yes. Does not commit or merge.
+disable-model-invocation: true
+icon: git-pull-request
+color: green
+---
+
+# Open a pull request
+
+Push the change branch **only after an explicit yes**, open **one** pull request against the head's into branch (see **Base branch**; usually the default branch), then stop. Do not merge in this skill. Merging is `/crav1-merge-pr`, a separate step, and only when they explicitly ask in that turn to merge a named pull request. Do not commit.
+
+Create with GitHub `gh` when that host's checks pass. On Azure DevOps, create with `az repos pr` when the Azure CLI can run it. Otherwise print filled commands and GitKraken GUI paste fields. Do not claim a pull request was opened unless the host returned a URL.
+
+Command: `/crav1-open-pr`.
+
+Other skills may **name** this command as an optional next step. Do not run it from those steps. Run it only when the user invoked `/crav1-open-pr` or clearly asked to open a pull request in this chat. `crav1-build-task-agent` does not push and does not open a pull request.
+
+## Inputs
+
+Resolve these before you push or create anything. Prompt when a value is missing or ambiguous. Show the resolved values with the title and body draft.
+
+| Input | Default |
+| --- | --- |
+| Base | The head's into branch, then the repo's `Merges into` branch, then the repo default branch. See **Base branch**. Confirm when ambiguous. |
+| Head | Current branch when it is not the base. Otherwise ask. Do not check out a different branch in this skill. |
+| Title | `<slug>: <short summary>` when the head is `feat/<slug>` or `spec/<slug>`. Summary is the `spec.md` H1 when `docs/specs/<slug>/spec.md` exists; otherwise the latest commit subject on the head. No slug: latest commit subject. |
+| Body | Format A in `references/draft.md`: a short summary, then headed sections with link-first bullets pinned to the head commit. No spec link. |
+| Push | Ask once, **after** the title and body are visible. Options in order: **push and open PR** (first/top), **open PR only** (remote already has the branch), **stop**. |
+
+On Windows, `git` may not be on `PATH`. Try `git`, then `C:\Program Files\Git\cmd\git.exe`. `az` may be `az.cmd`. When PowerShell calls `az.cmd`, `cmd.exe` cuts a multi-line argument at the first newline, and an unquoted `--query` value that contains parentheses is a syntax error. Quote every `--query` value (`--query "value[].pullRequestId"`). A multi-line pull-request description uses the `@file` steps in **Create**.
+
+## Base branch
+
+The base is the head's into branch, as `crav1-add-to-spec` `references/branches.md` ("Base branch and Merges into") says (skill `crav1-add-to-spec`, `references/branches.md`). Read `references/base.md` ("Base branch") to resolve it: the `(into …)` ask, the `Merges into` lookup (also in sibling checkouts), and the default-branch steps. Name where the base came from in the draft.
+
+Remote: the single `git remote`. If several remotes exist, ask which one. If none exist, draft the title and body if you can, then stop. Say no remote is configured. Do not claim a push or a pull request.
+
+## Checks (before the draft)
+
+Run these first. Abort in one short message. Do not commit, stash, or check out.
+
+| Condition | Stop |
+| --- | --- |
+| Not a git repo | Say so. |
+| Detached HEAD (`git branch --show-current` empty) and they did not name an existing local head | There is no branch to open from. |
+| Dirty tree | `git status --porcelain`, ignoring `agent-tools/`. Point them at `/crav1-finalize-commit`. This skill does not commit. |
+| Head has no commits ahead of base | `git rev-list --count <base-ref>..<head>` is 0. Name the refs. Nothing to open. |
+| Head branch does not exist locally | Ask for a local branch name. Do not create one. |
+
+Compare against `refs/remotes/<remote>/<base>` when that ref exists, otherwise the local `<base>` branch. If neither ref exists, ask them to name the base. Do not treat a missing ref as “zero commits ahead.”
+
+`agent-tools/` left dirty is fine. Mention that those paths stay uncommitted.
+
+If the current branch **is** the base, ask for the head. Do not open a pull request of the default branch into itself.
+
+If base or head is still ambiguous, that turn is the question only. No title, no body, no push menu.
+
+## Draft title and body
+
+Read `references/draft.md` ("Draft title and body") only when you draft the title and body. Since 1.98.0 the body is a 1–2 line summary, then Changes, Verified, Risks and rollback, Merge order, Not in this PR, Questions for reviewers and Work item, each left out when empty. Never link the spec; a missing rollback on an infra or PROD change is said in the chat only.
+
+## Host
+
+Read `references/host.md` to pick **one** create path: GitHub `gh`, then Azure DevOps `az`, then printed commands and GitKraken GUI paste.
+
+## Push and open
+
+Only after they pick `push` on the current draft.
+
+1. `git push -u <remote> <head>`. Never `--force`, `--force-with-lease`, `--force-if-includes`, or a refspec that starts with `+`.
+2. If the push fails, show the error. Do not open a pull request. Do not force-push. When it was rejected because the remote branch has commits this one lacks, say: `Pull <head> with git pull --no-rebase, resolve any conflicts, then push again.` Never suggest a rebase or a force-push (1.66.0).
+3. Open one pull request (below). If one already exists for this head → base, follow **Existing pull request** instead.
+
+## Open only
+
+Read `references/open-only.md` ("Open only") only after they pick `open` on the current draft.
+
+## Create
+
+### GitHub
+
+When **Host** says to use `gh`:
+
+```text
+gh pr list --head <head> --base <base> --state open --json number,url
+```
+
+If the list is non-empty, follow **Existing pull request**. Do not run `gh pr create`.
+
+Otherwise:
+
+```text
+gh pr create --base <base> --head <head> --title <title> --body <body>
+```
+
+Pass the body with a HEREDOC or `--body-file` so quotes survive. Do not pass `--draft`, `--reviewer`, `--label`, `--assignee`, or `--milestone` unless they asked for that in this chat.
+
+If create fails because a pull request already exists, follow **Existing pull request**. Do not open a second.
+
+On success, follow **After it exists**.
+
+### Azure DevOps
+
+Read `references/azure-devops.md` ("Azure DevOps (Create)") only when the remote is Azure DevOps.
+
+### No host create
+
+Read `references/fallback.md` ("No host create") only when no host CLI can open the pull request.
+
+## Existing pull request
+
+Read `references/existing-pr.md` ("Existing pull request", 1.114.0) when a pull request is already open for this head → base. It reads the pull request's author, description and the commits since the description was written, then offers **update description**, **add as comment**, **push only** and **stop** (add as comment first when someone else opened it). Update or comment shows the exact text and posts only on a yes; edits redraft it.
+
+## After it exists
+
+Read `references/after.md` ("After it exists") only when the pull request exists.
+
+## Hard rules
+
+- No `git commit`, no `git commit --amend`, no stash, no `git checkout`, no new branch.
+- No force-push. No advice to rebase or force-push; a rejected push is fixed by pulling with a merge.
+- No merge (`gh pr merge`, completing an Azure DevOps pull request, or a local merge). Merging is `/crav1-merge-pr` on a later explicit ask for a named pull request. Do not run it from this skill. Do not run `/crav1-review-pr`. A review is not a merge ask.
+- No second pull request for the same head → base.
+- On an existing pull request, post a description update or a comment only on a yes to the latest shown text. Never change its title, reviewers or state.
+- No repository setting changes.
+- No `gk ai pr create` and no other interactive `gk` pull-request create. GitKraken stays GUI paste only.
+- No dialog-box or browser Microsoft sign-in (`az login`, device code, or a web login).
+- No `--work-items` and no `--transition-work-items` unless they asked for that in this chat. A **Work item** section in the body is not that flag.
+- Do not block the pull request when `work-item.md` is missing. Do not create a work item and do not look one up.
+- Do not claim a pull request was opened unless the host returned a URL.
+- Workers stay no push and no pull request. Do not run this skill from `crav1-build-task-agent`.
+
+## Run ending (1.122.0)
+
+End as [run-ending.md](../crav1-docs/reference/run-ending.md) says.
